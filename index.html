@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PNW Wild Explorer — Trails · Wildlife · Habitat</title>
+<meta name="description" content="Interactive GIS map exploring Pacific Northwest trails, wildlife habitat, salmon streams, and fish passage barriers. A Kerala-to-Cascades story.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--forest:#1a2e1a;--canopy:#2d4a2d;--moss:#4a7c59;--lichen:#8fb996;--mist:#c8d8c4;--snow:#f0f4ee;--river:#3a7ca5;--salmon:#e87461;--trail:#d4a843;--rock:#8b7d6b;--bark:#5c4033;--deep:#0f1e0f}
+body{font-family:'DM Sans',sans-serif;background:var(--deep);color:var(--snow);height:100vh;overflow:hidden}
+#app{display:grid;grid-template-columns:340px 1fr;height:100vh}
+
+/* Sidebar */
+.sb{background:linear-gradient(180deg,var(--forest),var(--deep));border-right:1px solid rgba(143,185,150,.12);display:flex;flex-direction:column;overflow:hidden;z-index:10;transition:all .3s}
+.sb.closed{width:0;min-width:0;border:none;overflow:hidden}
+.sb-head{padding:20px 20px 12px}
+.logo{font-family:'Instrument Serif',serif;font-size:26px;color:var(--lichen);letter-spacing:-.5px}
+.logo b{color:var(--trail)}
+.tagline{font-size:10px;color:var(--rock);letter-spacing:2.5px;text-transform:uppercase;margin-top:4px;font-weight:500}
+
+/* Tabs */
+.tabs{display:flex;border-bottom:1px solid rgba(143,185,150,.1)}
+.tab{flex:1;padding:10px 0;text-align:center;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;cursor:pointer;color:var(--rock);border:none;border-bottom:2px solid transparent;background:none;font-family:inherit;font-weight:400;transition:all .2s}
+.tab.on{color:var(--trail);border-bottom-color:var(--trail);font-weight:600}
+
+.sb-body{flex:1;overflow-y:auto}
+.sec{padding:14px 20px;border-bottom:1px solid rgba(143,185,150,.08)}
+.sec-label{font-size:10px;letter-spacing:2.5px;text-transform:uppercase;color:var(--moss);margin-bottom:10px;font-weight:600}
+
+/* Layer toggles */
+.lr{display:flex;align-items:center;gap:10px;padding:6px 0;cursor:pointer;transition:opacity .2s}
+.lr:hover{opacity:.85}
+.dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;transition:all .2s}
+.dot.on{box-shadow:0 0 6px currentColor}
+.dot.off{opacity:.3;background:transparent!important;border:2px solid currentColor}
+.lr-name{font-size:13px;color:var(--mist)}
+.lr-ct{font-size:11px;color:var(--rock);margin-left:auto;font-variant-numeric:tabular-nums}
+
+/* Cards */
+.card{background:rgba(143,185,150,.05);border:1px solid rgba(143,185,150,.1);border-radius:8px;padding:10px 12px;margin-bottom:6px;cursor:pointer;transition:all .2s}
+.card:hover{background:rgba(143,185,150,.1);transform:translateX(2px)}
+.card-t{font-size:13px;font-weight:500;color:var(--snow);margin-bottom:3px}
+.card-m{font-size:11px;color:var(--rock);display:flex;gap:10px}
+
+.ccard{background:rgba(143,185,150,.06);border:1px solid rgba(143,185,150,.12);border-radius:10px;padding:14px 16px;margin-bottom:10px}
+.ccard-l{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--moss);margin-bottom:4px}
+.ccard-v{font-size:14px;color:var(--mist);line-height:1.5}
+
+.pcard{background:rgba(212,168,67,.04);border:1px solid rgba(212,168,67,.12);border-radius:10px;padding:14px 16px;margin-bottom:8px}
+
+.chip{font-size:11px;padding:3px 10px;border-radius:20px;display:inline-block;margin:2px}
+
+/* Buttons */
+.btn{padding:8px 14px;border-radius:8px;border:1px solid rgba(143,185,150,.2);background:rgba(26,46,26,.9);color:var(--lichen);font-size:12px;cursor:pointer;font-family:inherit;transition:all .2s}
+.btn:hover{background:rgba(45,74,45,.9);border-color:var(--moss)}
+.btn.on{background:rgba(212,168,67,.12);border-color:var(--trail);color:var(--trail)}
+
+.mbtn{position:absolute;z-index:9;background:rgba(15,30,15,.9);backdrop-filter:blur(8px);border:1px solid rgba(143,185,150,.2);border-radius:8px;width:38px;height:38px;color:var(--lichen);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.mbtn:hover{background:rgba(45,74,45,.9);border-color:var(--moss)}
+
+/* Info panel */
+.infop{position:absolute;bottom:16px;left:16px;right:16px;z-index:9;background:rgba(15,30,15,.94);backdrop-filter:blur(12px);border:1px solid rgba(143,185,150,.15);border-radius:12px;padding:16px 20px;display:none;animation:slideUp .3s ease}
+.infop.vis{display:block}
+@keyframes slideUp{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+
+.sb-foot{padding:10px 20px;border-top:1px solid rgba(143,185,150,.08);font-size:10px;color:var(--bark)}
+
+/* Leaflet overrides */
+.leaflet-control-zoom{display:none}
+.leaflet-popup-content-wrapper{background:rgba(15,30,15,.95)!important;border:1px solid rgba(143,185,150,.2)!important;border-radius:10px!important;color:var(--snow)!important;font-family:'DM Sans',sans-serif!important;box-shadow:0 8px 32px rgba(0,0,0,.4)!important}
+.leaflet-popup-content{margin:12px 16px!important;font-size:13px!important;line-height:1.5!important}
+.leaflet-popup-content h3{font-family:'Instrument Serif',serif;font-size:17px;margin:0 0 2px;color:var(--lichen)}
+.leaflet-popup-content .pt{font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--rock);margin-bottom:6px}
+.leaflet-popup-content .pd{font-size:12px;color:var(--mist);line-height:1.5}
+.leaflet-popup-tip{background:rgba(15,30,15,.95)!important;border:1px solid rgba(143,185,150,.2)!important}
+.leaflet-container a.leaflet-popup-close-button{color:var(--rock)!important;font-size:18px!important}
+
+/* Scrollbar */
+.sb-body::-webkit-scrollbar{width:4px}
+.sb-body::-webkit-scrollbar-track{background:transparent}
+.sb-body::-webkit-scrollbar-thumb{background:rgba(143,185,150,.2);border-radius:2px}
+
+/* Loading */
+.loader{position:fixed;inset:0;background:var(--deep);z-index:2000;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity .6s}
+.loader.out{opacity:0;pointer-events:none}
+.loader h1{font-family:'Instrument Serif',serif;font-size:32px;color:var(--lichen)}
+.loader p{font-size:12px;color:var(--rock);letter-spacing:3px;text-transform:uppercase;margin-top:8px}
+.lbar{width:200px;height:2px;background:rgba(143,185,150,.15);margin-top:24px;border-radius:1px;overflow:hidden}
+.lbar-fill{width:0%;height:100%;background:var(--lichen);border-radius:1px;transition:width .3s ease}
+
+select{width:100%;padding:8px 10px;border-radius:6px;border:1px solid rgba(143,185,150,.2);background:rgba(26,46,26,.8);color:var(--mist);font-size:13px;font-family:inherit}
+.story-body{padding:20px;animation:fadeIn .4s ease}
+.compare-body{padding:20px;animation:fadeIn .4s ease}
+.qjumps{display:flex;flex-wrap:wrap;gap:4px}
+
+@media(max-width:768px){
+  #app{grid-template-columns:1fr;grid-template-rows:auto 1fr}
+  .sb{max-height:45vh;overflow-y:auto}
+}
+</style>
+</head>
+<body>
+
+<!-- Loading -->
+<div class="loader" id="loader">
+  <h1>PNW Wild Explorer</h1>
+  <p>Loading terrain & wildlife data</p>
+  <div class="lbar"><div class="lbar-fill" id="lbarFill"></div></div>
+</div>
+
+<div id="app">
+  <!-- SIDEBAR -->
+  <div class="sb" id="sidebar">
+    <div class="sb-head">
+      <div class="logo">PNW <b>Wild</b> Explorer</div>
+      <div class="tagline">Trails · Wildlife · Habitat · Story</div>
+    </div>
+    <div class="tabs">
+      <button class="tab on" data-tab="explore" onclick="switchTab('explore')">🗺️ Explore</button>
+      <button class="tab" data-tab="story" onclick="switchTab('story')">📖 Story</button>
+      <button class="tab" data-tab="compare" onclick="switchTab('compare')">🔬 Compare</button>
+    </div>
+    <div class="sb-body" id="sbBody">
+      <!-- EXPLORE TAB -->
+      <div id="tab-explore">
+        <div class="sec">
+          <div class="sec-label">Map Layers</div>
+          <div class="lr" onclick="toggleLayer('trails')"><div class="dot on" id="d-trails" style="background:var(--trail);color:var(--trail)"></div><span class="lr-name">Trails & ORV Parks</span><span class="lr-ct" id="c-trails">12</span></div>
+          <div class="lr" onclick="toggleLayer('camps')"><div class="dot on" id="d-camps" style="background:var(--moss);color:var(--moss)"></div><span class="lr-name">Campsites</span><span class="lr-ct" id="c-camps">6</span></div>
+          <div class="lr" onclick="toggleLayer('salmon')"><div class="dot on" id="d-salmon" style="background:var(--salmon);color:var(--salmon)"></div><span class="lr-name">Salmon Streams</span><span class="lr-ct" id="c-salmon">7</span></div>
+          <div class="lr" onclick="toggleLayer('wildlife')"><div class="dot on" id="d-wildlife" style="background:#c9a0dc;color:#c9a0dc"></div><span class="lr-name">Wildlife Sightings</span><span class="lr-ct" id="c-wildlife">7</span></div>
+          <div class="lr" onclick="toggleLayer('barriers')"><div class="dot on" id="d-barriers" style="background:var(--river);color:var(--river)"></div><span class="lr-name">Fish Passage Barriers</span><span class="lr-ct" id="c-barriers">6</span></div>
+          <div class="lr" onclick="toggleLayer('routes')"><div class="dot on" id="d-routes" style="background:var(--trail);color:var(--trail)"></div><span class="lr-name">Saved Routes</span><span class="lr-ct">3</span></div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-label">Basemap</div>
+          <div style="display:flex;gap:6px">
+            <button class="btn on" id="bm-topo" onclick="setBasemap('topo')">Topo</button>
+            <button class="btn" id="bm-sat" onclick="setBasemap('sat')">Satellite</button>
+            <button class="btn" id="bm-osm" onclick="setBasemap('osm')">Street</button>
+          </div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-label">Live WDFW Data</div>
+          <button class="btn" style="width:100%;text-align:center" onclick="fetchLiveBarriers()" id="liveBtn">🔄 Fetch Fish Barriers in View</button>
+        </div>
+
+        <div class="sec">
+          <div class="sec-label">Stats</div>
+          <div style="display:flex;justify-content:space-between;padding:4px 0">
+            <span style="font-size:12px;color:var(--rock)">Features loaded</span>
+            <span style="font-family:'Instrument Serif',serif;font-size:20px;color:var(--lichen)" id="statFeatures">38</span>
+          </div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-label">Saved Routes</div>
+          <div id="routeList"></div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-label">Quick Jumps</div>
+          <div class="qjumps">
+            <button class="btn" style="font-size:11px;padding:6px 10px" onclick="flyTo(47.53,-122.033,12)">🏠 Issaquah</button>
+            <button class="btn" style="font-size:11px;padding:6px 10px" onclick="flyTo(46.852,-121.76,10)">🏔️ Rainier</button>
+            <button class="btn" style="font-size:11px;padding:6px 10px" onclick="flyTo(47.9,-124.5,9)">🌊 Olympic</button>
+            <button class="btn" style="font-size:11px;padding:6px 10px" onclick="flyTo(48.45,-121.75,10)">🐟 Skagit</button>
+            <button class="btn" style="font-size:11px;padding:6px 10px" onclick="flyTo(48.7,-121.1,9)">🐺 N. Cascades</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- STORY TAB -->
+      <div id="tab-story" style="display:none">
+        <div class="story-body">
+          <div style="font-family:'Instrument Serif',serif;font-size:24px;color:var(--lichen);margin-bottom:4px">Kerala to Cascades</div>
+          <div style="font-size:12px;color:var(--rock);line-height:1.6;margin-bottom:16px">A journey between two of Earth's great mountain ranges — both shaped by moisture-laden winds, both harboring extraordinary life, both needing protection.</div>
+
+          <div style="background:rgba(212,168,67,.06);border:1px solid rgba(212,168,67,.15);border-radius:10px;padding:16px;margin-bottom:16px">
+            <div style="font-size:13px;color:var(--trail);font-weight:500;margin-bottom:8px">Your Story</div>
+            <div style="font-size:12px;color:var(--mist);line-height:1.7">
+              From the cardamom-scented hills of Kerala's Western Ghats — where monsoon clouds crash against ancient mountains and elephants walk through tea plantations — to the salmon streams of Issaquah, where Chinook fight their way upstream past the I-90 interchange.<br><br>
+              Two biodiversity hotspots, 8,000 miles apart, connected by the same story: mountains that catch rain, forests that hold water, rivers that give life, and the urgent need for people who can map and protect what remains.<br><br>
+              GIS is the language that lets you speak for both landscapes.
+            </div>
+          </div>
+
+          <div class="sec-label">The Parallels</div>
+          <div class="pcard"><div style="font-size:14px;font-weight:500;margin-bottom:6px">🌧️ Orographic Rainfall</div><div style="font-size:12px;color:var(--mist);line-height:1.6">Both ranges force moisture-laden winds upward, creating extreme rainfall on windward slopes and rain shadows on the leeward side. The Western Ghats intercept the Arabian Sea monsoon; the Cascades intercept Pacific storms.</div></div>
+          <div class="pcard"><div style="font-size:14px;font-weight:500;margin-bottom:6px">🧬 Biodiversity Hotspot</div><div style="font-size:12px;color:var(--mist);line-height:1.6">Kerala hosts 62% of Western Ghats endemic vertebrates. The Cascades support the last wild salmon runs in the contiguous US, endangered orcas, and recovering wolf and grizzly populations.</div></div>
+          <div class="pcard"><div style="font-size:14px;font-weight:500;margin-bottom:6px">💧 Water Towers</div><div style="font-size:12px;color:var(--mist);line-height:1.6">Both ranges are "water towers" — the Western Ghats feed every major river in peninsular India, while Cascade snowpack feeds rivers that supply water to millions and support Pacific salmon life cycles.</div></div>
+          <div class="pcard"><div style="font-size:14px;font-weight:500;margin-bottom:6px">🌲 Forest Under Pressure</div><div style="font-size:12px;color:var(--mist);line-height:1.6">Kerala's forests face deforestation and mining. Washington's old-growth faces wildfire intensified by climate change. Both need the same thing: people who can map, monitor, and protect what remains.</div></div>
+          <div class="pcard"><div style="font-size:14px;font-weight:500;margin-bottom:6px">🤝 Indigenous Connection</div><div style="font-size:12px;color:var(--mist);line-height:1.6">The Adivasi peoples of the Western Ghats and the Coast Salish and Yakama peoples of the Cascades both hold deep ecological knowledge. Modern conservation increasingly recognizes traditional stewardship.</div></div>
+          <div class="pcard"><div style="font-size:14px;font-weight:500;margin-bottom:6px">🌉 Your Bridge</div><div style="font-size:12px;color:var(--mist);line-height:1.6">From the cardamom hills of Kerala to the salmon streams of Issaquah — your journey connects these two biodiversity hotspots. GIS is the language that lets you speak for both.</div></div>
+
+          <div style="margin-top:16px">
+            <div class="sec-label">Fly to Compare</div>
+            <div style="display:flex;gap:6px">
+              <button class="btn" style="flex:1" onclick="flyTo(10.5,76.5,7)">🌴 Western Ghats</button>
+              <button class="btn" style="flex:1" onclick="flyTo(47.5,-121.5,8)">🏔️ Cascades</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- COMPARE TAB -->
+      <div id="tab-compare" style="display:none">
+        <div class="compare-body" id="compareBody"></div>
+      </div>
+    </div>
+
+    <div class="sb-foot">Built by Ram · GIS Portfolio Project · 2026</div>
+  </div>
+
+  <!-- MAP -->
+  <div style="position:relative;flex:1">
+    <div id="map" style="width:100%;height:100%"></div>
+
+    <div style="position:absolute;top:16px;right:16px;z-index:9;display:flex;flex-direction:column;gap:6px">
+      <button class="mbtn" onclick="map.zoomIn()">+</button>
+      <button class="mbtn" onclick="map.zoomOut()">−</button>
+      <button class="mbtn" onclick="map.locate({setView:true,maxZoom:13})">◎</button>
+      <button class="mbtn" onclick="toggleSidebar()">◀</button>
+    </div>
+
+    <div class="infop" id="infoPanel">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <div style="font-family:'Instrument Serif',serif;font-size:18px" id="infoTitle"></div>
+          <div style="font-size:12px;color:var(--mist);margin-top:4px;line-height:1.5" id="infoBody"></div>
+        </div>
+        <button onclick="closeInfo()" style="background:none;border:none;color:var(--rock);font-size:20px;cursor:pointer">×</button>
+      </div>
+    </div>
+
+    <div style="position:absolute;bottom:6px;left:8px;z-index:8;font-size:10px;color:rgba(143,185,150,.4)">
+      Data: WDFW Open Data · WA Trails DB · OSM · Export from OnX/GAIA as GPX
+    </div>
+  </div>
+</div>
+
+<script>
+// ======================
+// DATA
+// ======================
+const TRAILS=[
+  {n:"Elbe Hills ORV Park",lat:46.798,lng:-122.358,t:"orv",d:"4WD Required",desc:"Forest roads and trails through working timber. Mix of easy gravel and challenging mud. Popular GX460 proving ground.",r:"South Cascades"},
+  {n:"Reiter Foothills ORV",lat:47.838,lng:-121.700,t:"orv",d:"Moderate–Hard",desc:"Technical 4WD trails with rock crawling sections in the Cascade foothills.",r:"Central Cascades"},
+  {n:"Tahuya State Forest",lat:47.420,lng:-122.820,t:"orv",d:"Easy–Mod",desc:"80+ miles of trails on Olympic Peninsula. ATV and 4WD friendly.",r:"Olympic"},
+  {n:"Capitol State Forest",lat:46.920,lng:-123.190,t:"orv",d:"Easy–Mod",desc:"Multi-use DNR forest near Olympia with ORV, mountain bike, and horse trails.",r:"South Sound"},
+  {n:"Walker Valley ORV",lat:48.458,lng:-122.050,t:"orv",d:"Moderate",desc:"Diverse terrain from meadows to rocky hillsides near Mt. Vernon.",r:"North Cascades"},
+  {n:"Rattlesnake Ledge",lat:47.435,lng:-121.773,t:"hike",d:"Easy",desc:"Quick 4mi roundtrip with panoramic views. 15 minutes from Issaquah.",r:"Issaquah Alps"},
+  {n:"Enchantment Lakes",lat:47.528,lng:-120.832,t:"hike",d:"Strenuous",desc:"Alpine lakes, golden larches, granite peaks. Permit lottery. WA's most iconic hike.",r:"Alpine Lakes"},
+  {n:"Lake Serene",lat:47.847,lng:-121.576,t:"hike",d:"Moderate",desc:"7.2mi roundtrip to pristine alpine lake beneath Mt. Index.",r:"Central Cascades"},
+  {n:"Shi Shi Beach",lat:48.277,lng:-124.688,t:"hike",d:"Moderate",desc:"Remote Olympic Coast wilderness beach with towering sea stacks. Unforgettable.",r:"Olympic Coast"},
+  {n:"Oyster Dome",lat:48.612,lng:-122.420,t:"hike",d:"Moderate",desc:"Scramble with sweeping Samish Bay and San Juan Islands views.",r:"Chuckanuts"},
+  {n:"NF-25 Scenic Drive",lat:46.180,lng:-121.980,t:"drive",d:"Gravel",desc:"Volcanic legacy drive near Mt. St. Helens. High clearance recommended.",r:"Mt. St. Helens"},
+  {n:"Mountain Loop Hwy",lat:48.070,lng:-121.590,t:"drive",d:"Paved/Gravel",desc:"55-mile scenic loop. Southern section is unpaved — perfect GX460 territory.",r:"North Cascades"},
+];
+
+const CAMPS=[
+  {n:"Ohanapecosh",lat:46.731,lng:-121.571,m:"NPS",s:188,desc:"Old-growth forest at Mt. Rainier. Hot springs nearby."},
+  {n:"Lake Wenatchee SP",lat:47.812,lng:-120.778,m:"State",s:155,desc:"Lakeside with swimming, kayaking, winter snowshoeing."},
+  {n:"Kalaloch",lat:47.614,lng:-124.371,m:"NPS",s:168,desc:"Oceanfront camping on Olympic Coast. Storm watching."},
+  {n:"Silver Falls",lat:46.758,lng:-121.600,m:"NPS",s:40,desc:"Quiet Rainier campground with waterfall loop from camp."},
+  {n:"Icicle Group",lat:47.565,lng:-120.715,m:"USFS",s:22,desc:"Along Icicle Creek near Leavenworth. Fall colors."},
+  {n:"Beverly CG",lat:47.405,lng:-120.890,m:"USFS",s:16,desc:"Remote dispersed near Stuart Range trailheads."},
+];
+
+const SALMON=[
+  {n:"Issaquah Creek Chinook",lat:47.530,lng:-122.055,sp:"Chinook",st:"Active",desc:"Urban salmon success. Fall run Sept–Nov. Hatchery educational site."},
+  {n:"Cedar River Sockeye",lat:47.475,lng:-122.100,sp:"Sockeye",st:"Active",desc:"One of largest urban sockeye runs in the US."},
+  {n:"Elwha River Restored",lat:48.100,lng:-123.556,sp:"Multi",st:"Recovering",desc:"Dam removal opened 70+ miles. Chinook, Coho, Steelhead returning."},
+  {n:"Skagit Wild Steelhead",lat:48.450,lng:-121.750,sp:"Steelhead",st:"Wild",desc:"Premier wild steelhead river. Bald eagle grounds Nov–Feb."},
+  {n:"Nisqually Chinook",lat:47.075,lng:-122.690,sp:"Chinook",st:"Active",desc:"Glacier-fed from Rainier. Critical estuary at delta."},
+  {n:"Mid Fork Snoqualmie Coho",lat:47.535,lng:-121.580,sp:"Coho",st:"Active",desc:"Close to Issaquah. Fall Coho through old-growth forest."},
+  {n:"Nooksack Chinook",lat:48.845,lng:-122.440,sp:"Chinook",st:"Threatened",desc:"Endangered Puget Sound population. Major restoration."},
+];
+
+const WILDLIFE=[
+  {n:"Roosevelt Elk – Hoh",lat:47.860,lng:-123.930,sp:"Roosevelt Elk",p:"~5,000",desc:"Largest unmanaged PNW herd. Best at dawn in Hoh meadows."},
+  {n:"Gray Wolves – N. Cascades",lat:48.520,lng:-120.620,sp:"Gray Wolf",p:"~35 packs",desc:"Growing WA population. Concentrated NE WA and N. Cascades."},
+  {n:"Southern Resident Orca",lat:48.530,lng:-123.100,sp:"Orca",p:"~73",desc:"Endangered J, K, L pods. Declining Chinook food source."},
+  {n:"Grizzly – N. Cascades",lat:48.770,lng:-121.150,sp:"Grizzly Bear",p:"<10",desc:"Critically endangered. Last confirmed sighting: 2010."},
+  {n:"Bald Eagle – Skagit",lat:48.500,lng:-121.570,sp:"Bald Eagle",p:"300–500",desc:"Hundreds gather Nov–Feb for spawned-out chum salmon."},
+  {n:"Marbled Murrelet",lat:47.900,lng:-124.500,sp:"Murrelet",p:"Threatened",desc:"Seabird nesting in old-growth. Forest health indicator."},
+  {n:"Pileated Woodpecker",lat:47.520,lng:-122.080,sp:"Woodpecker",p:"Common",desc:"Mature forests of Tiger & Cougar Mountain near Issaquah."},
+];
+
+const BARRIERS=[
+  {n:"Pilchuck Creek Culvert",lat:48.095,lng:-122.050,bt:"Culvert",st:"Blocked",bl:"Coho, Steelhead",desc:"Blocks 3.2mi spawning habitat."},
+  {n:"Coal Creek Crossing",lat:47.568,lng:-122.148,bt:"Culvert",st:"Partial",bl:"Coho, Cutthroat",desc:"Near Bellevue. Restricts juvenile migration."},
+  {n:"Issaquah Creek I-90",lat:47.540,lng:-122.035,bt:"Culvert",st:"Fixed",bl:"None (corrected 2022)",desc:"Major correction. Chinook now accessing upstream."},
+  {n:"May Creek Dam",lat:47.510,lng:-122.180,bt:"Dam",st:"Blocked",bl:"Sockeye, Coho",desc:"Renton watershed priority list."},
+  {n:"Canyon Creek Culvert",lat:48.870,lng:-122.080,bt:"Culvert",st:"Blocked",bl:"Steelhead, Chinook",desc:"Priority barrier, Nooksack watershed."},
+  {n:"Tumwater Falls Ladder",lat:47.011,lng:-122.900,bt:"Dam+Ladder",st:"Partial",bl:"Variable",desc:"Historic dam with fish ladder. Passage varies with flow."},
+];
+
+const ROUTES=[
+  {id:1,n:"Elbe Hills ORV Loop",dt:"Mar 15, 2026",dist:"34 mi",ter:"4WD",col:"#d4a843",c:[[46.798,-122.358],[46.812,-122.340],[46.825,-122.365],[46.810,-122.380],[46.798,-122.358]]},
+  {id:2,n:"Rainier – Ashford",dt:"Feb 22, 2026",dist:"48 mi",ter:"Mixed",col:"#8fb996",c:[[46.752,-122.178],[46.790,-122.115],[46.810,-121.980],[46.835,-121.760]]},
+  {id:3,n:"Wenatchee – Leavenworth",dt:"Dec 8, 2025",dist:"62 mi",ter:"Hwy",col:"#3a7ca5",c:[[47.812,-120.778],[47.720,-120.680],[47.596,-120.661]]},
+];
+
+const COMPARE={
+  kerala:{name:"Western Ghats, Kerala",emoji:"🌴",elev:"0–2,695m (Anamudi)",rain:"2,500–7,000mm",area:"136,800 km²",bio:"7,402 flowering species (5,588 endemic)",status:"UNESCO World Heritage · 1 of 8 hottest biodiversity hotspots",monsoon:"Southwest monsoon from Arabian Sea rises against windward slopes → extreme rainfall",rivers:"Periyar, Pamba, Bharathappuzha — 'Water Tower of Peninsular India'",species:["Asian Elephant","Bengal Tiger","Lion-tailed Macaque","Nilgiri Tahr","King Cobra","Great Hornbill"],forests:["Tropical Evergreen","Moist Deciduous","Shola-Grassland","Myristica Swamps"],threats:["Deforestation","Mining","Infrastructure","Climate change","Tourism pressure"]},
+  cascades:{name:"Cascade Range, Washington",emoji:"🏔️",elev:"0–4,392m (Mt. Rainier)",rain:"1,500–4,500mm (windward)",area:"~78,000 km² (WA portion)",bio:"3,000+ plant species, 500+ animal species",status:"Global Temperate Rainforest · N. American Biodiversity Corridor",monsoon:"Pacific storms: moist air rises against Cascades → heavy rain/snow",rivers:"Skagit, Nisqually, Elwha, Cedar — critical salmon & steelhead habitat",species:["Roosevelt Elk","Gray Wolf","Chinook Salmon","Orca","Marbled Murrelet","Grizzly Bear"],forests:["Temperate Rainforest","Old-Growth Conifer","Subalpine","Alpine Meadow"],threats:["Wildfire","Logging legacy","Salmon habitat loss","Climate change","Development"]}
+};
+
+// ======================
+// MAP INIT
+// ======================
+const map = L.map('map',{center:[47.5,-121.5],zoom:8,zoomControl:false,attributionControl:false});
+L.control.attribution({position:'bottomright',prefix:false}).addAttribution('© <a href="https://openstreetmap.org">OSM</a> · WDFW · Built by Ram').addTo(map);
+
+const basemaps={
+  topo:L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{maxZoom:17}),
+  sat:L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:18}),
+  osm:L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}),
+};
+let curBase=basemaps.topo.addTo(map);
+
+// Icons
+function mkIcon(e,sz=22){return L.divIcon({html:`<span style="font-size:${sz}px;filter:drop-shadow(0 1px 3px rgba(0,0,0,.6))">${e}</span>`,iconSize:[sz,sz],iconAnchor:[sz/2,sz/2],className:''})}
+function mkDot(c,r=6){return L.divIcon({html:`<div style="width:${r*2}px;height:${r*2}px;border-radius:50%;background:${c};border:2px solid #fffc;box-shadow:0 0 8px ${c}90"></div>`,iconSize:[r*2,r*2],iconAnchor:[r,r],className:''})}
+function pp(t,sub,body){return`<h3>${t}</h3><div class="pt">${sub}</div><div class="pd">${body}</div>`}
+
+const ICONS={orv:'🛻',hike:'🥾',drive:'🛣️'};
+const SCOL={Blocked:'#e74c3c',Partial:'#f39c12',Fixed:'#2ecc71'};
+
+// Layer groups
+const layerState={trails:true,camps:true,salmon:true,wildlife:true,barriers:true,routes:true};
+const groups={};
+let routeLines=[];
+let liveCount=0;
+
+function buildLayers(){
+  // Trails
+  groups.trails=L.layerGroup();
+  TRAILS.forEach(t=>{
+    L.marker([t.lat,t.lng],{icon:mkIcon(ICONS[t.t]||'🥾')}).bindPopup(pp(t.n,`${t.t.toUpperCase()} · ${t.d}`,t.desc)).on('click',()=>showInfo(t.n,t.desc)).addTo(groups.trails);
+  });
+  groups.trails.addTo(map);
+
+  // Camps
+  groups.camps=L.layerGroup();
+  CAMPS.forEach(c=>{L.marker([c.lat,c.lng],{icon:mkIcon('⛺')}).bindPopup(pp(c.n,`${c.m} · ${c.s} sites`,c.desc)).on('click',()=>showInfo(c.n,c.desc)).addTo(groups.camps)});
+  groups.camps.addTo(map);
+
+  // Salmon
+  groups.salmon=L.layerGroup();
+  SALMON.forEach(s=>{L.marker([s.lat,s.lng],{icon:mkDot('#e87461',7)}).bindPopup(pp(s.n,`🐟 ${s.sp} · ${s.st}`,s.desc)).on('click',()=>showInfo(s.n,s.desc)).addTo(groups.salmon)});
+  groups.salmon.addTo(map);
+
+  // Wildlife
+  groups.wildlife=L.layerGroup();
+  WILDLIFE.forEach(w=>{L.marker([w.lat,w.lng],{icon:mkIcon('🦌',20)}).bindPopup(pp(w.n,`${w.sp} · Pop: ${w.p}`,w.desc)).on('click',()=>showInfo(w.n,w.desc)).addTo(groups.wildlife)});
+  groups.wildlife.addTo(map);
+
+  // Barriers
+  groups.barriers=L.layerGroup();
+  BARRIERS.forEach(b=>{
+    const col=SCOL[b.st]||'#f39c12';
+    L.marker([b.lat,b.lng],{icon:mkDot(col,5)}).bindPopup(pp(b.n,`${b.bt} · ${b.st}`,`${b.desc}<br><strong style="color:var(--salmon)">Blocked: ${b.bl}</strong>`)).on('click',()=>showInfo(b.n,`${b.desc} | Blocked: ${b.bl}`)).addTo(groups.barriers);
+  });
+  groups.barriers.addTo(map);
+
+  // Routes
+  ROUTES.forEach(r=>{
+    const line=L.polyline(r.c,{color:r.col,weight:3,opacity:.85,dashArray:'8 6'}).addTo(map);
+    routeLines.push(line);
+  });
+}
+
+// Route list
+function renderRoutes(){
+  const el=document.getElementById('routeList');
+  el.innerHTML=ROUTES.map(r=>`<div class="card" onclick="flyTo(${r.c[0][0]},${r.c[0][1]},11);showInfo('${r.n.replace(/'/g,"\\'")}','${r.dist} · ${r.ter} · ${r.dt}')"><div class="card-t">${r.n}</div><div class="card-m"><span>${r.dt}</span><span>${r.dist}</span><span style="color:${r.col}">●</span></div></div>`).join('');
+}
+
+// ======================
+// CONTROLS
+// ======================
+function toggleLayer(name){
+  layerState[name]=!layerState[name];
+  const d=document.getElementById('d-'+name);
+  if(name==='routes'){
+    routeLines.forEach(l=>layerState.routes?map.addLayer(l):map.removeLayer(l));
+  } else {
+    layerState[name]?map.addLayer(groups[name]):map.removeLayer(groups[name]);
+  }
+  d.classList.toggle('on',layerState[name]);
+  d.classList.toggle('off',!layerState[name]);
+}
+
+function setBasemap(key){
+  map.removeLayer(curBase);
+  curBase=basemaps[key].addTo(map);
+  ['topo','sat','osm'].forEach(k=>{
+    const b=document.getElementById('bm-'+k);
+    b.classList.toggle('on',k===key);
+  });
+}
+
+function flyTo(lat,lng,z=12){map.flyTo([lat,lng],z,{duration:1.2})}
+
+function showInfo(title,body){
+  document.getElementById('infoTitle').textContent=title;
+  document.getElementById('infoBody').textContent=body;
+  document.getElementById('infoPanel').classList.add('vis');
+}
+function closeInfo(){document.getElementById('infoPanel').classList.remove('vis')}
+
+function toggleSidebar(){document.getElementById('sidebar').classList.toggle('closed')}
+
+// Tabs
+function switchTab(name){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t.dataset.tab===name));
+  ['explore','story','compare'].forEach(t=>{
+    const el=document.getElementById('tab-'+t);
+    if(el)el.style.display=t===name?'block':'none';
+  });
+  if(name==='compare')renderCompare('kerala');
+}
+
+// Compare
+let curCompare='kerala';
+function renderCompare(side){
+  curCompare=side;
+  const d=COMPARE[side];
+  const el=document.getElementById('compareBody');
+  el.innerHTML=`
+    <div style="font-family:'Instrument Serif',serif;font-size:22px;color:var(--lichen);margin-bottom:12px">${d.emoji} ${d.name}</div>
+    <div style="display:flex;gap:6px;margin-bottom:16px">
+      <button class="btn ${side==='kerala'?'on':''}" style="flex:1" onclick="renderCompare('kerala');flyTo(10.5,76.5,7)">🌴 Kerala</button>
+      <button class="btn ${side==='cascades'?'on':''}" style="flex:1" onclick="renderCompare('cascades');flyTo(47.5,-121.5,8)">🏔️ Cascades</button>
+    </div>
+    ${[['Elevation',d.elev],['Rainfall',d.rain],['Area',d.area],['Biodiversity',d.bio],['Status',d.status],['Rainfall Mechanism',d.monsoon],['Key Rivers',d.rivers]].map(([l,v])=>`<div class="ccard"><div class="ccard-l">${l}</div><div class="ccard-v">${v}</div></div>`).join('')}
+    <div class="ccard"><div class="ccard-l">Key Species</div><div style="margin-top:4px">${d.species.map(s=>`<span class="chip" style="background:rgba(143,185,150,.1);border:1px solid rgba(143,185,150,.15);color:var(--lichen)">${s}</span>`).join('')}</div></div>
+    <div class="ccard"><div class="ccard-l">Forest Types</div><div style="margin-top:4px">${d.forests.map(f=>`<span class="chip" style="background:rgba(74,124,89,.1);border:1px solid rgba(74,124,89,.2);color:var(--moss)">${f}</span>`).join('')}</div></div>
+    <div class="ccard"><div class="ccard-l">Key Threats</div><div style="margin-top:4px">${d.threats.map(t=>`<span class="chip" style="background:rgba(232,116,97,.08);border:1px solid rgba(232,116,97,.2);color:var(--salmon)">${t}</span>`).join('')}</div></div>
+  `;
+}
+
+// Live WDFW data
+async function fetchLiveBarriers(){
+  const btn=document.getElementById('liveBtn');
+  btn.textContent='⏳ Fetching from WDFW...';
+  btn.disabled=true;
+  try{
+    const b=map.getBounds();
+    const url=`https://geodataservices.wdfw.wa.gov/arcgis/rest/services/ApplicationServices/FP_Sites/MapServer/0/query?where=1%3D1&geometry=${b.getWest()},${b.getSouth()},${b.getEast()},${b.getNorth()}&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=SiteName,StreamName,BarrierStatus&returnGeometry=true&outSR=4326&f=json&resultRecordCount=200`;
+    const res=await fetch(url);
+    const data=await res.json();
+    if(data.features){
+      data.features.filter(f=>f.geometry).forEach(f=>{
+        L.marker([f.geometry.y,f.geometry.x],{icon:mkDot('#3a7ca5',4)})
+          .bindPopup(pp(f.attributes.SiteName||'Fish Passage Site','WDFW Live · '+(f.attributes.BarrierStatus||'Unknown'),f.attributes.StreamName||''))
+          .addTo(groups.barriers);
+      });
+      liveCount=data.features.length;
+      document.getElementById('c-barriers').textContent=BARRIERS.length+liveCount;
+      document.getElementById('statFeatures').textContent=TRAILS.length+CAMPS.length+SALMON.length+WILDLIFE.length+BARRIERS.length+liveCount;
+      btn.textContent=`✅ ${liveCount} barriers loaded — fetch again`;
+    }
+  }catch(e){
+    btn.textContent='⚠️ WDFW API unreachable — try again';
+    console.log('WDFW fetch error:',e);
+  }
+  btn.disabled=false;
+}
+
+// ======================
+// INIT
+// ======================
+buildLayers();
+renderRoutes();
+
+// Loading animation
+(function(){
+  const bar=document.getElementById('lbarFill');
+  const steps=[30,55,75,90,100];
+  let i=0;
+  function next(){
+    if(i>=steps.length){
+      setTimeout(()=>{
+        document.getElementById('loader').classList.add('out');
+        setTimeout(()=>document.getElementById('loader').style.display='none',600);
+      },200);
+      return;
+    }
+    bar.style.width=steps[i]+'%';
+    i++;
+    setTimeout(next,[200,400,300,200,300][i-1]);
+  }
+  setTimeout(next,300);
+})();
+</script>
+</body>
+</html>
